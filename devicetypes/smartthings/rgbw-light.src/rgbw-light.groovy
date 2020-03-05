@@ -103,7 +103,15 @@ metadata {
 
 private getCOLOR_TEMP_MIN() { 2700 }
 private getCOLOR_TEMP_MAX() { 6500 }
-private getWHITE_MIN() { 0 } // min for Z-Wave coldWhite and warmWhite paramaeters
+// For Z-Wave devices, we control illumination by crossfading the cold and warm
+// white channels.  But for devices that only have single cold or warm white
+// illumination (as with many RGBW LED strips), we cannot dim either white
+// channel to 0, as this will then completely turn off illumination.
+// Therefore, we lower-bound both white channels to 1.  This will have no
+// perceptible impact for devices that actually support white temperature
+// cross-fading, but will keep devices that do not doing something sane from
+// the user perspective, which is to modify intensity for the single white
+private getWHITE_MIN() { 1 } // min for Z-Wave coldWhite and warmWhite paramaeters
 private getWHITE_MAX() { 255 } // max for Z-Wave coldWhite and warmWhite paramaeters
 private getCOLOR_TEMP_DIFF() { COLOR_TEMP_MAX - COLOR_TEMP_MIN }
 private getRED() { "red" }
@@ -114,6 +122,9 @@ private getCOLD_WHITE() { "coldWhite" }
 private getRGB_NAMES() { [RED, GREEN, BLUE] }
 private getWHITE_NAMES() { [WARM_WHITE, COLD_WHITE] }
 private getCOLOR_NAMES() { RGB_NAMES + WHITE_NAMES }
+private MIN(a, b) { a < b ? a : b }
+private MAX(a, b) { a > b ? a : b }
+private BOUND(x, floor, ceiling) { x < floor ? floor : x > ceiling ? ceiling : x }
 
 def updated() {
 	log.debug "updated().."
@@ -275,12 +286,16 @@ def setColor(value) {
 }
 
 private tempToZwaveWarmWhite(temp) {
-	temp = temp < COLOR_TEMP_MIN ? COLOR_TEMP_MIN : temp > COLOR_TEMP_MAX ? COLOR_TEMP_MAX : temp
+	temp = BOUND(temp, COLOR_TEMP_MIN, COLOR_TEMP_MAX)
 	def warmValue = ((COLOR_TEMP_MAX - temp) / COLOR_TEMP_DIFF * WHITE_MAX) as Integer
+	warmValue = MAX(WHITE_MIN, warmValue)
+	warmValue
 }
 
 private tempToZwaveColdWhite(temp) {
-	(WHITE_MAX - tempToZwaveWarmWhite(temp))
+	def coldValue = (WHITE_MAX - tempToZwaveWarmWhite(temp))
+	coldValue = MAX(WHITE_MIN, coldValue)
+	coldValue
 }
 
 def setColorTemperature(temp) {
